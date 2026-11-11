@@ -7,12 +7,12 @@
 <meta name="description" content="Прогноз клёва рыбы на 7 дней по погоде, давлению и фазе луны. Летний и зимний режим, карта и отчёты рыбаков.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎣</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=4">
+<link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
 <div class="wrap">
   <h1>🎣 Прогноз клёва</h1>
-  <p class="sub">Индекс активности рыбы на любую дату — по погоде, давлению и фазе луны</p>
+  <p class="sub">Индекс активности рыбы на 9 дней вперёд — по погоде, давлению и фазе луны</p>
 
   <div class="controls">
     <input id="city" placeholder="Город или водоём, например: Рыбинск" autocomplete="off">
@@ -90,15 +90,16 @@
     <ul class="reports" id="reports"></ul>
   </div>
 
-  <p class="foot">Погода: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Карта: © OpenStreetMap.
-    Прогноз — оценка по рыболовным приметам, а не гарантия улова. Выходя на лёд, проверяйте его толщину: не меньше 7–10 см. · Версия 4</p>
+  <p class="foot">Погода: <span id="source">MET Norway (CC BY 4.0)</span>. Карта: © OpenStreetMap.
+    Прогноз — оценка по рыболовным приметам, а не гарантия улова. Выходя на лёд, проверяйте его толщину: не меньше 7–10 см. · Версия 6 · <a href="check.html">Проверка связи</a></p>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="js/net.js?v=4"></script>
-<script src="js/config.js?v=4"></script>
-<script src="js/forecast.js?v=4"></script>
-<script src="js/catches.js?v=4"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/net.js?v=6"></script>
+<script src="js/config.js?v=6"></script>
+<script src="js/weather.js?v=6"></script>
+<script src="js/forecast.js?v=6"></script>
+<script src="js/catches.js?v=6"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка связи</title>
+<style>
+:root{--bg:#f4f7f6;--card:#fff;--text:#14231f;--muted:#5b6d68;--line:#dfe7e4;--good:#16a34a;--bad:#dc2626;--mid:#ca8a04;--accent:#0f766e}
+@media (prefers-color-scheme: dark){:root{--bg:#0d1513;--card:#15211e;--text:#e6efec;--muted:#93a7a1;--line:#24332f;--accent:#2dd4bf}}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,sans-serif}
+.wrap{max-width:640px;margin:0 auto;padding:24px 16px}
+h1{font-size:24px;margin:0 0 6px}
+p{color:var(--muted);margin:0 0 16px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+td{padding:10px;border-top:1px solid var(--line);vertical-align:top;font-size:14px}
+tr:first-child td{border-top:0}
+td.s{width:28px;font-size:18px}
+.d{color:var(--muted);font-size:12px;word-break:break-word}
+button{font:inherit;padding:10px 16px;border-radius:10px;border:0;background:var(--accent);color:#fff;margin:12px 0}
+.info{font-size:12px;color:var(--muted);word-break:break-word}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔧 Проверка связи</h1>
+  <p>Страница проверяет, доступны ли из вашей сети сервисы, которые нужны сайту. Сделайте скриншот результата и пришлите его.</p>
+  <table id="t"></table>
+  <button id="again">Проверить ещё раз</button>
+  <div class="info" id="info"></div>
+  <p style="margin-top:16px"><a href="./">← Вернуться к прогнозу</a></p>
+</div>
+<script>
+// Намеренно простой код без зависимостей, чтобы страница работала даже в старых браузерах
+var TESTS = [
+  ['Карта: библиотека Leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'],
+  ['Карта: плитки OpenStreetMap', 'https://tile.openstreetmap.org/5/19/9.png'],
+  ['Погода: MET Norway (основной)', 'https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=59.94&lon=30.31'],
+  ['Погода: Open-Meteo (запасной)', 'https://api.open-meteo.com/v1/forecast?latitude=59.94&longitude=30.31&hourly=temperature_2m,pressure_msl,wind_speed_10m,precipitation,cloud_cover&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto&past_days=3&forecast_days=10&timeformat=unixtime'],
+  ['Поиск мест: OpenStreetMap', 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3'],
+  ['Поиск мест: Photon (запасной)', 'https://photon.komoot.io/api/?limit=1&q=%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3'],
+  ['Поиск мест: Open-Meteo (запасной)', 'https://geocoding-api.open-meteo.com/v1/search?name=%D0%9F%D0%B5%D1%82%D0%B5%D1%80%D0%B1%D1%83%D1%80%D0%B3&count=1&language=ru'],
+  ['Место по сети: geojs', 'https://get.geojs.io/v1/ip/country.json'],
+  ['Отчёты рыбаков: Supabase', 'https://auequuxfcwdshblqrwbd.supabase.co/rest/v1/fishing_catches?select=id&limit=1',
+    {apikey: 'sb_publishable_ZF67r4UX91_n180NPFQuvA_0D_-8Ya2'}]
+];
+
+function row(i, icon, name, detail) {
+  var t = document.getElementById('t');
+  var tr = document.getElementById('r' + i);
+  if (!tr) { tr = t.insertRow(); tr.id = 'r' + i; }
+  tr.innerHTML = '<td class="s">' + icon + '</td><td>' + name + '<div class="d">' + detail + '</div></td>';
+}
+
+function test(i) {
+  var name = TESTS[i][0], url = TESTS[i][1], headers = TESTS[i][2] || {};
+  var start = Date.now(), done = false;
+  row(i, '⏳', name, 'проверяю…');
+  var ctrl = window.AbortController ? new AbortController() : null;
+  var timer = setTimeout(function () {
+    if (done) return; done = true;
+    if (ctrl) ctrl.abort();
+    row(i, '❌', name, 'нет ответа за 20 с');
+  }, 20000);
+  fetch(url, {headers: headers, signal: ctrl ? ctrl.signal : undefined, cache: 'no-store'})
+    .then(function (r) { return r.arrayBuffer().then(function (b) { return [r, b.byteLength]; }); })
+    .then(function (x) {
+      if (done) return; done = true; clearTimeout(timer);
+      var ms = Date.now() - start, kb = (x[1] / 1024).toFixed(1);
+      var icon = x[0].ok ? (ms > 5000 ? '🐢' : '✅') : '❌';
+      row(i, icon, name, 'код ' + x[0].status + ', ' + kb + ' КБ за ' + (ms / 1000).toFixed(1) + ' с' + (ms > 5000 ? ' — очень медленно' : ''));
+    })
+    .catch(function (e) {
+      if (done) return; done = true; clearTimeout(timer);
+      row(i, '❌', name, 'ошибка: ' + (e && e.message ? e.message : e) + ' (' + ((Date.now() - start) / 1000).toFixed(1) + ' с)');
+    });
+}
+
+function runAll() {
+  for (var i = 0; i < TESTS.length; i++) test(i);
+  var geo = 'нет';
+  if (navigator.geolocation) geo = window.isSecureContext ? 'есть' : 'есть, но сайт открыт не по https';
+  document.getElementById('info').innerHTML =
+    'Время: ' + new Date().toLocaleString('ru-RU') + '<br>Геолокация в браузере: ' + geo +
+    '<br>Браузер: ' + navigator.userAgent.replace(/</g, '&lt;');
+}
+document.getElementById('again').onclick = runAll;
+runAll();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 // Общие помощники: запросы с таймаутом и вывод неожиданных ошибок на экран.
 (function (global) {
   'use strict';
-  global.APP_VERSION = '4';
+  global.APP_VERSION = '6';
 
   // fetch, который не «висит» бесконечно, если сервис недоступен или режется провайдером
   global.fetchT = function (url, opts = {}, ms = 15000) {
@@ -19,7 +19,8 @@
   function show(msg) {
     const el = document.getElementById('status');
     if (!el) return;
-    el.textContent = `⚠️ Ошибка: ${msg} (версия ${global.APP_VERSION})`;
+    el.textContent = `⚠️ Ошибка: ${msg} (версия ${global.APP_VERSION}) `;
+    const a = document.createElement('a'); a.href = 'check.html'; a.textContent = 'Проверить связь'; el.appendChild(a);
     el.classList.add('err');
   }
   global.addEventListener('error', e => show(e.message || 'неизвестная ошибка'));

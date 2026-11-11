@@ -158,7 +158,9 @@
   // Лёд вероятен, если неделю до сегодняшнего дня в среднем было ниже −3°C
   // или последние 3 дня держится мороз ниже −8°C
   function detectSeason(hours, nowMs = Date.now()) {
-    const past = hours.filter(h => h.time.getTime() <= nowMs);
+    let past = hours.filter(h => h.time.getTime() <= nowMs);
+    // у некоторых источников (MET Norway) нет прошлых дней — тогда судим по ближайшим трём суткам
+    if (past.length < 24) past = hours.slice(0, 72);
     const avg = arr => arr.reduce((s, h) => s + h.air, 0) / Math.max(arr.length, 1);
     const week = avg(past.slice(-24 * 7)), days3 = avg(past.slice(-72));
     return (week < -3 || days3 < -8) ? 'ice' : 'open';

@@ -11,7 +11,6 @@
   const RATING = ['', 'не клевало', 'слабо', 'средне', 'хорошо', 'отлично'];
   const METHOD = {spinning: 'спиннинг', jig: 'джиг', float: 'поплавок', feeder: 'фидер', bottom: 'донка',
     fly: 'мормышка', tipup: 'жерлицы', trolling: 'троллинг', other: 'другое'};
-  const PAST_DAYS = 30, FUTURE_DAYS = 16;  // Open-Meteo отдаёт до 16 дней вперёд
   const RELIABLE_DAYS = 7;                 // дальше прогноз погоды сильно теряет точность
 
   const state = {all: [], days: [], place: null, selKey: null, todayKey: null, autoSeason: 'open', catches: [], offset: 0};
@@ -69,6 +68,14 @@
     const name = parts.length > 3 ? [parts[0], parts[parts.length - 3], parts[parts.length - 1]].join(', ') : g.display_name;
     return {lat: +(+g.lat).toFixed(4), lon: +(+g.lon).toFixed(4), name: name || q};
   }
+  async function geocodePhoton(q) {
+    const r = await fetchT(`https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(q)}`, {}, 10000);
+    if (!r.ok) throw new Error('photon ' + r.status);
+    const f = ((await r.json()).features || [])[0];
+    if (!f) return null;
+    const pr = f.properties || {}, [lon, lat] = f.geometry.coordinates;
+    return {lat: +lat.toFixed(4), lon: +lon.toFixed(4), name: [pr.name, pr.state, pr.country].filter(Boolean).join(', ') || q};
+  }
   async function geocodeOpenMeteo(q) {
     const r = await fetchT(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=ru&format=json`);
     if (!r.ok) throw new Error('om ' + r.status);
@@ -78,7 +85,7 @@
     return {lat: g.latitude, lon: g.longitude, name: [g.name, g.admin1, g.country].filter(Boolean).join(', ')};
   }
   async function geocode(q) {
-    for (const fn of [geocodeOSM, geocodeOpenMeteo]) {
+    for (const fn of [geocodeOSM, geocodePhoton, geocodeOpenMeteo]) {
       try { const res = await fn(q); if (res) return res; } catch (e) { /* пробуем следующий сервис */ }
     }
     throw new Error(`Не нашёл «${q}». Попробуйте написать иначе или нажмите нужное место на карте.`);
@@ -149,14 +156,7 @@
     throw new Error(`Не удалось определить местоположение. ${gpsHint(code)} Или просто нажмите своё место на карте.`);
   }
 
-  async function loadWeather(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&hourly=temperature_2m,pressure_msl,wind_speed_10m,precipitation,cloud_cover` +
-      `&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto&past_days=${PAST_DAYS}&forecast_days=${FUTURE_DAYS}&timeformat=unixtime`;
-    const r = await fetchT(url);
-    if (!r.ok) throw new Error('Не удалось получить погоду');
-    return r.json();
-  }
+  const loadWeather = (lat, lon) => window.Weather.load(lat, lon);
 
   let runId = 0;
   async function run(placeOrPromise, loadingText = 'Загружаю прогноз…') {
@@ -175,7 +175,9 @@
       // только полные сутки (24 часа), чтобы не показывать обрезанные дни
       const count = new Map();
       for (const h of state.all) count.set(dayKey(h), (count.get(dayKey(h)) || 0) + 1);
-      state.days = [...count.entries()].filter(([, n]) => n >= 23).map(([k]) => k);
+      // сегодняшний день может быть неполным (прогноз с текущего часа), остальные — только почти полные сутки
+      state.days = [...count.entries()].filter(([k, n]) => n >= 12 || k === state.todayKey).map(([k]) => k);
+      $('source').textContent = w.source === 'MET Norway' ? 'MET Norway (CC BY 4.0)' : w.source;
       state.autoSeason = detectSeason(state.all);
       state.place = pl;
       const first = state.days[0], last = state.days[state.days.length - 1];
@@ -195,7 +197,7 @@
       loadCatches();
     } catch (e) {
       if (my !== runId) return;
-      $('status').textContent = '⚠️ ' + e.message;
+      $('status').innerHTML = '⚠️ ' + esc(e.message) + ' · <a href="check.html">Проверить связь</a>';
       $('status').classList.add('err');
     }
   }
