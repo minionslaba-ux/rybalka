@@ -4,102 +4,145 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Прогноз клёва</title>
-<meta name="description" content="Прогноз клёва рыбы на 7 дней по погоде, давлению и фазе луны. Летний и зимний режим, карта и отчёты рыбаков.">
+<meta name="description" content="Прогноз клёва рыбы на 9 дней по погоде, давлению и фазе луны. Дневник рыбалок, карта и отчёты рыбаков.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎣</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=6">
+<link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body>
 <div class="wrap">
   <h1>🎣 Прогноз клёва</h1>
   <p class="sub">Индекс активности рыбы на 9 дней вперёд — по погоде, давлению и фазе луны</p>
 
-  <div class="controls">
-    <input id="city" placeholder="Город или водоём, например: Рыбинск" autocomplete="off">
-    <button id="go" class="primary">Найти</button>
-    <button id="geo" title="Моё местоположение">📍 Рядом со мной</button>
-  </div>
-  <div class="controls">
-    <select id="fish" aria-label="Рыба"></select>
-    <select id="season" aria-label="Сезон">
-      <option value="auto">Сезон: авто</option>
-      <option value="open">Открытая вода</option>
-      <option value="ice">Со льда</option>
-    </select>
-    <div class="datebox">
-      <button id="prevDay" type="button" aria-label="Предыдущий день">◀</button>
-      <input type="date" id="date" aria-label="Дата прогноза">
-      <button id="nextDay" type="button" aria-label="Следующий день">▶</button>
-      <button id="today" type="button">Сегодня</button>
-    </div>
-    <a class="btn-report" href="#reportPanel">📝 Отчёт об улове</a>
-  </div>
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="forecast" aria-selected="true">🎣 Прогноз</button>
+    <button type="button" role="tab" data-tab="diary" aria-selected="false">📔 Мой дневник</button>
+  </nav>
 
   <div class="status" id="status" role="status" aria-live="polite"></div>
 
-  <div id="map"></div>
-  <p class="map-hint">Нажмите на карту, чтобы получить прогноз для любой точки. Кружки — отчёты рыбаков за 30 дней.</p>
+  <!-- ===================== Прогноз ===================== -->
+  <section id="forecastView">
+    <div class="controls">
+      <input id="city" placeholder="Город или водоём, например: Рыбинск" autocomplete="off">
+      <button id="go" class="primary">Найти</button>
+      <button id="geo" title="Моё местоположение">📍 Рядом со мной</button>
+    </div>
+    <div class="controls">
+      <select id="fish" aria-label="Рыба"></select>
+      <select id="season" aria-label="Сезон">
+        <option value="auto">Сезон: авто</option>
+        <option value="open">Открытая вода</option>
+        <option value="ice">Со льда</option>
+      </select>
+      <div class="datebox">
+        <button id="prevDay" type="button" aria-label="Предыдущий день">◀</button>
+        <input type="date" id="date" aria-label="Дата прогноза">
+        <button id="nextDay" type="button" aria-label="Следующий день">▶</button>
+        <button id="today" type="button">Сегодня</button>
+      </div>
+      <a class="btn-report" href="#diary" id="toDiary">📝 Записать рыбалку</a>
+    </div>
 
-  <div class="place" id="place"></div>
-  <div class="days" id="days"></div>
-  <div id="detail"></div>
+    <div id="map"></div>
+    <p class="map-hint">Нажмите на карту, чтобы получить прогноз для любой точки. Кружки — отчёты рыбаков за 30 дней.</p>
 
-  <div class="panel" id="reportPanel">
-    <h2>📝 Отчёт об улове</h2>
-    <p class="foot" style="margin-top:0">Расскажите, как клевало: по отчётам рыбаков мы проверяем и улучшаем прогноз.</p>
-    <form class="form" id="catchForm">
-      <div class="wide where">📍 Место: <b id="cfPlace">выберите на карте или найдите по названию</b>
-        <span class="foot">— чтобы указать другое место, нажмите на карту</span></div>
-      <label>Рыба *<select name="fish" id="cfFish"></select></label>
-      <label>Дата и время *<input type="datetime-local" name="caught_at" id="cfTime" required></label>
-      <fieldset class="wide rating">
-        <legend>Как клевало *</legend>
-        <label><input type="radio" name="rating" value="1" required><span>😞<br>не клевало</span></label>
-        <label><input type="radio" name="rating" value="2"><span>😕<br>слабо</span></label>
-        <label><input type="radio" name="rating" value="3"><span>😐<br>средне</span></label>
-        <label><input type="radio" name="rating" value="4"><span>🙂<br>хорошо</span></label>
-        <label><input type="radio" name="rating" value="5"><span>🤩<br>отлично</span></label>
-      </fieldset>
-      <label>Снасть
-        <select name="method">
-          <option value="">— не указано —</option>
-          <option value="spinning">Спиннинг</option>
-          <option value="jig">Джиг</option>
-          <option value="float">Поплавочная удочка</option>
-          <option value="feeder">Фидер</option>
-          <option value="bottom">Донка</option>
-          <option value="fly">Мормышка / зимняя удочка</option>
-          <option value="tipup">Жерлицы</option>
-          <option value="trolling">Троллинг</option>
-          <option value="other">Другое</option>
-        </select></label>
-      <label>Приманка / наживка<input name="bait" maxlength="80" placeholder="мотыль, воблер, твистер…"></label>
-      <label>Глубина, м<input type="number" name="depth_m" min="0" max="300" step="0.1" inputmode="decimal"></label>
-      <label>Поймано, шт.<input type="number" name="fish_count" min="0" max="500" inputmode="numeric"></label>
-      <label>Общий вес, кг<input type="number" name="weight_kg" min="0" max="200" step="0.01" inputmode="decimal"></label>
-      <label>Ваше имя<input name="nickname" maxlength="40" placeholder="необязательно"></label>
-      <label class="wide">Комментарий<textarea name="comment" maxlength="500" placeholder="Где стояла рыба, что сработало, погода на месте…"></textarea></label>
-      <div class="wide"><button class="primary" type="submit">Отправить отчёт</button></div>
-    </form>
-    <div class="msg" id="cfMsg"></div>
-  </div>
+    <div class="place" id="place"></div>
+    <div class="days" id="days"></div>
+    <div id="detail"></div>
 
-  <div class="panel" id="reportsPanel">
-    <h2>Отчёты рыбаков рядом</h2>
-    <div class="stats" id="stats"></div>
-    <ul class="reports" id="reports"></ul>
-  </div>
+    <div class="panel" id="reportsPanel">
+      <h2>Отчёты рыбаков рядом</h2>
+      <div class="stats" id="stats"></div>
+      <ul class="reports" id="reports"></ul>
+    </div>
+  </section>
+
+  <!-- ===================== Дневник ===================== -->
+  <section id="diaryView" hidden>
+    <div class="panel" id="account"></div>
+
+    <div class="panel" id="tripPanel">
+      <h2 id="tripTitle">📝 Записать рыбалку</h2>
+      <form class="form" id="tripForm" novalidate>
+        <input type="hidden" name="id">
+        <div class="wide where">📍 Место: <b id="tpPlace">не указано</b>
+          <span class="place-actions">
+            <button type="button" class="small" id="tpUsePoint">Взять точку с прогноза</button>
+            <button type="button" class="small" id="tpNoPlace">Без места</button>
+          </span>
+          <div class="foot">Точку можно выбрать на вкладке «Прогноз»: поиском или нажатием на карту.</div>
+        </div>
+        <label>Дата и время *<input type="datetime-local" name="trip_at" id="tpTime" required></label>
+        <label>Длительность, ч<input type="number" name="hours" min="0" max="72" step="0.5" inputmode="decimal"></label>
+        <label>Рыба<select name="fish" id="tpFish"><option value="">— разная / не указано —</option></select></label>
+        <fieldset class="wide rating">
+          <legend>Как клевало *</legend>
+          <label><input type="radio" name="rating" value="1"><span>😞<br>не клевало</span></label>
+          <label><input type="radio" name="rating" value="2"><span>😕<br>слабо</span></label>
+          <label><input type="radio" name="rating" value="3"><span>😐<br>средне</span></label>
+          <label><input type="radio" name="rating" value="4"><span>🙂<br>хорошо</span></label>
+          <label><input type="radio" name="rating" value="5"><span>🤩<br>отлично</span></label>
+        </fieldset>
+        <label>Снасть
+          <select name="method">
+            <option value="">— не указано —</option>
+            <option value="spinning">Спиннинг</option>
+            <option value="jig">Джиг</option>
+            <option value="float">Поплавочная удочка</option>
+            <option value="feeder">Фидер</option>
+            <option value="bottom">Донка</option>
+            <option value="fly">Мормышка / зимняя удочка</option>
+            <option value="tipup">Жерлицы</option>
+            <option value="trolling">Троллинг</option>
+            <option value="other">Другое</option>
+          </select></label>
+        <label>Приманка / наживка<input name="bait" maxlength="80" placeholder="мотыль, воблер, твистер…"></label>
+        <label>Глубина, м<input type="number" name="depth_m" min="0" max="300" step="0.1" inputmode="decimal"></label>
+        <label>Поймано, шт.<input type="number" name="fish_count" min="0" max="1000" inputmode="numeric"></label>
+        <label>Общий вес, кг<input type="number" name="weight_kg" min="0" max="500" step="0.01" inputmode="decimal"></label>
+        <label>Самая крупная, кг<input type="number" name="biggest_kg" min="0" max="100" step="0.01" inputmode="decimal"></label>
+        <label class="wide">Заметки<textarea name="notes" maxlength="2000" placeholder="Где стояла рыба, что сработало, погода на месте…"></textarea></label>
+        <label class="check wide"><input type="checkbox" name="is_public" checked>
+          <span>Поделиться в «Отчётах рыбаков» — остальные увидят клёв, снасть и приманку, место будет округлено до ~1 км.
+            Для записей старше 30 дней не публикуется.</span></label>
+        <label>Имя для общих отчётов<input name="nickname" maxlength="40" placeholder="необязательно"></label>
+        <div class="wide buttons">
+          <button class="primary" type="submit">Сохранить в дневник</button>
+          <button type="button" id="tpCancel" hidden>Отменить правку</button>
+        </div>
+      </form>
+      <div class="msg" id="tpMsg" role="status"></div>
+    </div>
+
+    <div class="panel">
+      <h2>📊 Мои отчёты</h2>
+      <div class="controls">
+        <select id="dFilterFish" aria-label="Рыба"><option value="">Все рыбы</option></select>
+        <select id="dFilterYear" aria-label="Год"><option value="">За всё время</option></select>
+        <button type="button" id="dExport">⬇️ Скачать CSV</button>
+      </div>
+      <div id="dReport"></div>
+    </div>
+
+    <div class="panel">
+      <h2>🗒 Записи</h2>
+      <ul class="reports" id="tripList"></ul>
+    </div>
+  </section>
 
   <p class="foot">Погода: <span id="source">MET Norway (CC BY 4.0)</span>. Карта: © OpenStreetMap.
-    Прогноз — оценка по рыболовным приметам, а не гарантия улова. Выходя на лёд, проверяйте его толщину: не меньше 7–10 см. · Версия 6 · <a href="check.html">Проверка связи</a></p>
+    Прогноз — оценка по рыболовным приметам, а не гарантия улова. Выходя на лёд, проверяйте его толщину: не меньше 7–10 см. · Версия 7 · <a href="check.html">Проверка связи</a></p>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="js/net.js?v=6"></script>
-<script src="js/config.js?v=6"></script>
-<script src="js/weather.js?v=6"></script>
-<script src="js/forecast.js?v=6"></script>
-<script src="js/catches.js?v=6"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/net.js?v=7"></script>
+<script src="js/config.js?v=7"></script>
+<script src="js/weather.js?v=7"></script>
+<script src="js/forecast.js?v=7"></script>
+<script src="js/catches.js?v=7"></script>
+<script src="js/diary.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
+<script src="js/diary-ui.js?v=7"></script>
 </body>
 </html>

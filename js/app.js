@@ -26,7 +26,6 @@
 
   for (const [k, v] of Object.entries(FISH)) {
     $('fish').add(new Option(v.name, k));
-    $('cfFish').add(new Option(v.name, k));
   }
 
   const season = () => $('season').value === 'auto' ? state.autoSeason : $('season').value;
@@ -184,8 +183,8 @@
       $('date').min = first; $('date').max = last;
       if (!state.selKey || state.selKey < first || state.selKey > last) state.selKey = state.todayKey;
       $('date').value = state.selKey;
-      $('cfPlace').textContent = pl.name;
       const {hint, ...savedPlace} = pl;
+      document.dispatchEvent(new CustomEvent('placechange', {detail: savedPlace}));
       store.set({place: savedPlace});
       $('status').textContent = hint || '';
       if (map) {
@@ -366,61 +365,25 @@
     }
   }
 
-  function localInputValue(d) {
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
-  function resetForm(fishKey) {
-    $('catchForm').reset();
-    $('cfFish').value = fishKey || $('fish').value;
-    const now = new Date();
-    $('cfTime').value = localInputValue(now);
-    $('cfTime').max = localInputValue(new Date(now.getTime() + 3600000));
-    $('cfTime').min = localInputValue(new Date(now.getTime() - 29 * 86400000));
-    try { const n = localStorage.getItem('ff_nick'); if (n) $('catchForm').nickname.value = n; } catch (e) {}
-  }
-  resetForm();
-
-  $('catchForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    if (!state.place) { $('cfMsg').textContent = 'Сначала выберите место.'; return; }
-    const fd = new FormData(e.target);
-    const when = new Date(fd.get('caught_at'));
-    if (isNaN(when) || when > new Date(Date.now() + 3600000)) { $('cfMsg').textContent = 'Проверьте дату и время — улов не может быть в будущем.'; return; }
-    if (when < new Date(Date.now() - 29 * 86400000)) { $('cfMsg').textContent = 'Можно отметить улов только за последние 30 дней.'; return; }
-    if (!fd.get('rating')) { $('cfMsg').textContent = 'Отметьте, как клевало.'; return; }
-
-    // запоминаем, что показывал прогноз в этот час: потом по этим данным можно подобрать веса модели
-    const fishKey = fd.get('fish'), ss = season();
-    let forecast_score = null, factors = null;
+  // ---------- интерфейс для дневника (js/diary-ui.js) ----------
+  // Снимок погоды и прогноза на момент рыбалки, если этот час есть в загруженном прогнозе
+  function snapshot(when, fishKey) {
+    if (!state.all.length || !(when instanceof Date) || isNaN(when)) return null;
     const hour = state.all.reduce((best, h) => !best || Math.abs(h.time - when) < Math.abs(best.time - when) ? h : best, null);
-    if (hour && Math.abs(hour.time - when) <= 2 * 3600000) {
-      const r = scoreHour(hour, FISH[fishKey], ss);
-      forecast_score = r.score;
-      factors = Object.fromEntries(Object.entries(r.f).map(([k, v]) => [k, +v.toFixed(3)]));
-      Object.assign(factors, {p: +hour.p.toFixed(1), dp3: +hour.dp3.toFixed(1), dp24: +hour.dp24.toFixed(1),
-        air: +hour.air.toFixed(1), water: +hour.water.toFixed(1), wind: +hour.wind.toFixed(1), clouds: hour.clouds, precip: hour.precip});
-    }
-    const num = k => fd.get(k) == null || fd.get(k) === '' ? null : Number(fd.get(k));
-    const txt = (k, n) => String(fd.get(k) || '').trim().slice(0, n) || null;
-    const btn = e.target.querySelector('button');
-    btn.disabled = true; $('cfMsg').textContent = 'Отправляю…';
-    try {
-      await window.Catches.add({
-        caught_at: when.toISOString(), lat: +state.place.lat.toFixed(4), lon: +state.place.lon.toFixed(4),
-        place: state.place.name.slice(0, 120), fish: fishKey, season: ss, rating: Number(fd.get('rating')),
-        fish_count: num('fish_count'), weight_kg: num('weight_kg'), depth_m: num('depth_m'),
-        method: fd.get('method') || null, bait: txt('bait', 80), nickname: txt('nickname', 40),
-        comment: txt('comment', 500), forecast_score, factors,
-      });
-      try { if (fd.get('nickname')) localStorage.setItem('ff_nick', String(fd.get('nickname')).trim()); } catch (e) {}
-      $('cfMsg').textContent = '✅ Спасибо! Отчёт сохранён.';
-      resetForm(fishKey);
-      loadCatches();
-    } catch (err) {
-      $('cfMsg').textContent = '⚠️ ' + err.message;
-    } finally { btn.disabled = false; }
-  });
+    if (!hour || Math.abs(hour.time - when) > 2 * 3600000) return null;
+    const ss = season(), r = fishKey && FISH[fishKey] ? scoreHour(hour, FISH[fishKey], ss) : null;
+    return {
+      forecast_score: r ? r.score : null, season: ss,
+      weather: {p: +hour.p.toFixed(1), dp3: +hour.dp3.toFixed(1), dp24: +hour.dp24.toFixed(1), air: +hour.air.toFixed(1),
+        water: +hour.water.toFixed(1), wind: +hour.wind.toFixed(1), clouds: hour.clouds, precip: hour.precip,
+        moon: +hour.moon.toFixed(3), ...(r ? {factors: Object.fromEntries(Object.entries(r.f).map(([k, v]) => [k, +v.toFixed(3)]))} : {})},
+    };
+  }
+  window.App = {
+    getPlace: () => state.place, season, snapshot, refreshCatches: loadCatches,
+    currentFish: () => $('fish').value,
+    mapResize: () => { if (map) setTimeout(() => map.invalidateSize(), 50); },
+  };
 
   // ---------- события ----------
   $('go').onclick = () => { const q = $('city').value.trim(); if (q) { store.set({city: q}); run(geocode(q)); } };
