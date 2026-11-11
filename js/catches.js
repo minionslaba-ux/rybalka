@@ -39,7 +39,7 @@
       try { localStorage.setItem(LS_KEY, JSON.stringify(all.slice(-500))); } catch (e) {}
       return;
     }
-    const r = await fetch(`${cfg.supabaseUrl}/rest/v1/fishing_catches`, {
+    const r = await fetchT(`${cfg.supabaseUrl}/rest/v1/fishing_catches`, {
       method: 'POST', headers: {...headers(), Prefer: 'return=minimal'}, body: JSON.stringify(row),
     });
     if (!r.ok) {
@@ -62,7 +62,7 @@
     q.append('lon', `gte.${lon - deg}`); q.append('lon', `lte.${lon + deg}`);
     q.set('caught_at', `gte.${since}`);
     q.set('order', 'caught_at.desc'); q.set('limit', '200');
-    const r = await fetch(`${cfg.supabaseUrl}/rest/v1/fishing_catches?${q}`, {headers: headers()});
+    const r = await fetchT(`${cfg.supabaseUrl}/rest/v1/fishing_catches?${q}`, {headers: headers()});
     if (!r.ok) throw new Error('Не удалось загрузить отчёты');
     return r.json();
   }

@@ -36,15 +36,24 @@
   let map = null, pointMarker = null, catchLayer = null;
   if (window.L) {
     map = L.map('map', {scrollWheelZoom: false}).setView([55.75, 37.62], 6);
+    map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>'); // без флага
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
     catchLayer = L.layerGroup().addTo(map);
     map.on('click', e => {
       const lat = +e.latlng.lat.toFixed(4), lon = +e.latlng.lng.toFixed(4);
-      run({lat, lon, name: `Точка ${lat}, ${lon}`});
+      movePin(lat, lon); // метку переносим сразу, не дожидаясь погоды
+      run(reverseName(lat, lon).then(n => ({lat, lon, name: n ? `${n} · ${lat}, ${lon}` : `Точка ${lat}, ${lon}`})),
+        'Загружаю прогноз для выбранной точки…');
     });
-  } else {
+  }
+  function movePin(lat, lon) {
+    if (!map) return;
+    if (pointMarker) pointMarker.setLatLng([lat, lon]);
+    else pointMarker = L.marker([lat, lon]).addTo(map);
+  }
+  if (!map) {
     $('map').style.display = 'none';
     document.querySelector('.map-hint').style.display = 'none';
   }
@@ -52,7 +61,7 @@
   // ---------- загрузка данных ----------
   // Поиск места: сначала OpenStreetMap (находит и города, и водоёмы), затем Open-Meteo как запасной вариант
   async function geocodeOSM(q) {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=ru&q=${encodeURIComponent(q)}`);
+    const r = await fetchT(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=ru&q=${encodeURIComponent(q)}`);
     if (!r.ok) throw new Error('osm ' + r.status);
     const j = await r.json();
     if (!j.length) return null;
@@ -61,7 +70,7 @@
     return {lat: +(+g.lat).toFixed(4), lon: +(+g.lon).toFixed(4), name: name || q};
   }
   async function geocodeOpenMeteo(q) {
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=ru&format=json`);
+    const r = await fetchT(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=ru&format=json`);
     if (!r.ok) throw new Error('om ' + r.status);
     const j = await r.json();
     if (!j.results?.length) return null;
@@ -75,29 +84,76 @@
     throw new Error(`Не нашёл «${q}». Попробуйте написать иначе или нажмите нужное место на карте.`);
   }
 
-  function locate() {
+  // Точная геопозиция (GPS / Wi-Fi). Свой таймер нужен потому, что iOS может «зависнуть»,
+  // если окно с разрешением закрыли или не показали, и тогда штатный timeout не срабатывает.
+  function gps() {
     return new Promise((res, rej) => {
-      if (!navigator.geolocation) return rej(new Error('Браузер не поддерживает геолокацию.'));
-      if (!window.isSecureContext) return rej(new Error('Геолокация работает только на сайте с https://.'));
+      if (!navigator.geolocation) return rej({code: 'unsupported'});
+      if (!window.isSecureContext) return rej({code: 'insecure'});
+      const timer = setTimeout(() => rej({code: 'hang'}), 20000);
       navigator.geolocation.getCurrentPosition(
-        p => res({lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4), name: 'Моё местоположение'}),
-        err => {
-          const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-          if (err.code === 1) rej(new Error(ios
-            ? 'Доступ к геопозиции запрещён. На iPhone: Настройки → Конфиденциальность и безопасность → Службы геолокации → включите их и для «Сайты Safari» (или Chrome) выберите «При использовании». Затем обновите страницу. Или просто нажмите своё место на карте.'
-            : 'Доступ к геопозиции запрещён. Разрешите его в настройках сайта (значок замка в адресной строке) или нажмите своё место на карте.'));
-          else if (err.code === 3) rej(new Error('Не удалось определить место за 15 секунд. Попробуйте ещё раз или нажмите место на карте.'));
-          else rej(new Error('Не удалось определить местоположение. Нажмите своё место на карте.'));
-        },
+        p => { clearTimeout(timer); res({lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4)}); },
+        err => { clearTimeout(timer); rej({code: err.code}); },
         {enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60000});
     });
+  }
+
+  // Примерное место по IP-адресу (точность — город). Запасной вариант, если GPS недоступен.
+  async function ipLocate() {
+    const sources = [
+      async () => { const j = await (await fetchT('https://get.geojs.io/v1/ip/geo.json', {}, 8000)).json();
+        return {lat: +j.latitude, lon: +j.longitude, city: j.city || j.region}; },
+      async () => { const j = await (await fetchT('https://ipapi.co/json/', {}, 8000)).json();
+        return {lat: +j.latitude, lon: +j.longitude, city: j.city || j.region}; },
+    ];
+    for (const s of sources) {
+      try { const r = await s(); if (isFinite(r.lat) && isFinite(r.lon) && (r.lat || r.lon)) return r; } catch (e) {}
+    }
+    return null;
+  }
+
+  async function reverseName(lat, lon) {
+    try {
+      const r = await fetchT(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=12&accept-language=ru&lat=${lat}&lon=${lon}`, {}, 6000);
+      const j = await r.json(), a = j.address || {};
+      return a.city || a.town || a.village || a.municipality || a.county || a.state || null;
+    } catch (e) { return null; }
+  }
+
+  function gpsHint(code) {
+    const ua = navigator.userAgent;
+    const inApp = /Telegram|VK|Instagram|FBAN|FBAV|YaBrowser\/.*Mobile.*SA|Line\//i.test(ua);
+    const ios = /iPhone|iPad|iPod/.test(ua);
+    if (inApp) return 'Встроенный браузер приложения не даёт доступ к геопозиции — откройте сайт в Safari или Chrome.';
+    if (code === 1) return ios
+      ? 'Чтобы определять точно, разрешите геопозицию: Настройки → Конфиденциальность и безопасность → Службы геолокации (включить) → «Сайты Safari» (или Chrome) → «При использовании». Если раньше нажали «Запретить»: Настройки → Safari → Местонахождение → «Спросить».'
+      : 'Чтобы определять точно, разрешите геопозицию в настройках сайта (значок слева от адреса).';
+    if (code === 'hang') return 'Телефон не ответил на запрос геопозиции. Проверьте, что службы геолокации включены.';
+    return 'Точная геопозиция недоступна.';
+  }
+
+  async function locate() {
+    let code = null;
+    try {
+      const p = await gps();
+      const city = await reverseName(p.lat, p.lon);
+      return {...p, name: city ? `Рядом со мной · ${city}` : 'Моё местоположение'};
+    } catch (e) { code = e.code; }
+    $('status').textContent = 'Точная геопозиция недоступна, определяю примерно…';
+    const ip = await ipLocate();
+    if (ip) {
+      const lat = +ip.lat.toFixed(4), lon = +ip.lon.toFixed(4), city = (await reverseName(lat, lon)) || ip.city;
+      return {lat, lon, name: `≈ ${city || 'Моё местоположение'} (по сети)`,
+        hint: `ℹ️ Место определено примерно, по интернет-подключению. Уточните, нажав на карту. ${gpsHint(code)}`};
+    }
+    throw new Error(`Не удалось определить местоположение. ${gpsHint(code)} Или просто нажмите своё место на карте.`);
   }
 
   async function loadWeather(lat, lon) {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
       `&hourly=temperature_2m,pressure_msl,wind_speed_10m,precipitation,cloud_cover` +
       `&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto&past_days=${PAST_DAYS}&forecast_days=${FUTURE_DAYS}&timeformat=unixtime`;
-    const r = await fetch(url);
+    const r = await fetchT(url);
     if (!r.ok) throw new Error('Не удалось получить погоду');
     return r.json();
   }
@@ -127,11 +183,11 @@
       if (!state.selKey || state.selKey < first || state.selKey > last) state.selKey = state.todayKey;
       $('date').value = state.selKey;
       $('cfPlace').textContent = pl.name;
-      store.set({place: pl});
-      $('status').textContent = '';
+      const {hint, ...savedPlace} = pl;
+      store.set({place: savedPlace});
+      $('status').textContent = hint || '';
       if (map) {
-        if (pointMarker) pointMarker.remove();
-        pointMarker = L.marker([pl.lat, pl.lon]).addTo(map);
+        movePin(pl.lat, pl.lon);
         map.invalidateSize();
         map.setView([pl.lat, pl.lon], Math.max(map.getZoom(), 9));
       }
