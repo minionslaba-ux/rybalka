@@ -9,8 +9,15 @@
   const label = s => s >= 80 ? 'Отличный' : s >= 65 ? 'Хороший' : s >= 45 ? 'Средний' : s >= 30 ? 'Слабый' : 'Плохой';
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   const RATING = ['', 'не клевало', 'слабо', 'средне', 'хорошо', 'отлично'];
+  const METHOD = {spinning: 'спиннинг', jig: 'джиг', float: 'поплавок', feeder: 'фидер', bottom: 'донка',
+    fly: 'мормышка', tipup: 'жерлицы', trolling: 'троллинг', other: 'другое'};
+  const PAST_DAYS = 30, FUTURE_DAYS = 16;  // Open-Meteo отдаёт до 16 дней вперёд
+  const RELIABLE_DAYS = 7;                 // дальше прогноз погоды сильно теряет точность
 
-  const state = {all: [], hours: [], place: null, sel: 0, autoSeason: 'open', catches: [], offset: 0};
+  const state = {all: [], days: [], place: null, selKey: null, todayKey: null, autoSeason: 'open', catches: [], offset: 0};
+  const dayKey = h => h.local.toISOString().slice(0, 10);
+  const addDays = (key, n) => new Date(Date.parse(key + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
   // ---------- настройки, сохранённые в браузере ----------
   const store = {
@@ -43,78 +50,138 @@
   }
 
   // ---------- загрузка данных ----------
-  async function geocode(q) {
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=ru&format=json`);
+  // Поиск места: сначала OpenStreetMap (находит и города, и водоёмы), затем Open-Meteo как запасной вариант
+  async function geocodeOSM(q) {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=ru&q=${encodeURIComponent(q)}`);
+    if (!r.ok) throw new Error('osm ' + r.status);
     const j = await r.json();
-    if (!j.results?.length) throw new Error('Место не найдено');
+    if (!j.length) return null;
+    const g = j[0], parts = (g.display_name || '').split(', ');
+    const name = parts.length > 3 ? [parts[0], parts[parts.length - 3], parts[parts.length - 1]].join(', ') : g.display_name;
+    return {lat: +(+g.lat).toFixed(4), lon: +(+g.lon).toFixed(4), name: name || q};
+  }
+  async function geocodeOpenMeteo(q) {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=ru&format=json`);
+    if (!r.ok) throw new Error('om ' + r.status);
+    const j = await r.json();
+    if (!j.results?.length) return null;
     const g = j.results[0];
     return {lat: g.latitude, lon: g.longitude, name: [g.name, g.admin1, g.country].filter(Boolean).join(', ')};
+  }
+  async function geocode(q) {
+    for (const fn of [geocodeOSM, geocodeOpenMeteo]) {
+      try { const res = await fn(q); if (res) return res; } catch (e) { /* пробуем следующий сервис */ }
+    }
+    throw new Error(`Не нашёл «${q}». Попробуйте написать иначе или нажмите нужное место на карте.`);
+  }
+
+  function locate() {
+    return new Promise((res, rej) => {
+      if (!navigator.geolocation) return rej(new Error('Браузер не поддерживает геолокацию.'));
+      if (!window.isSecureContext) return rej(new Error('Геолокация работает только на сайте с https://.'));
+      navigator.geolocation.getCurrentPosition(
+        p => res({lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4), name: 'Моё местоположение'}),
+        err => {
+          const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+          if (err.code === 1) rej(new Error(ios
+            ? 'Доступ к геопозиции запрещён. На iPhone: Настройки → Конфиденциальность и безопасность → Службы геолокации → включите их и для «Сайты Safari» (или Chrome) выберите «При использовании». Затем обновите страницу. Или просто нажмите своё место на карте.'
+            : 'Доступ к геопозиции запрещён. Разрешите его в настройках сайта (значок замка в адресной строке) или нажмите своё место на карте.'));
+          else if (err.code === 3) rej(new Error('Не удалось определить место за 15 секунд. Попробуйте ещё раз или нажмите место на карте.'));
+          else rej(new Error('Не удалось определить местоположение. Нажмите своё место на карте.'));
+        },
+        {enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60000});
+    });
   }
 
   async function loadWeather(lat, lon) {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
       `&hourly=temperature_2m,pressure_msl,wind_speed_10m,precipitation,cloud_cover` +
-      `&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto&past_days=7&forecast_days=7&timeformat=unixtime`;
+      `&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto&past_days=${PAST_DAYS}&forecast_days=${FUTURE_DAYS}&timeformat=unixtime`;
     const r = await fetch(url);
     if (!r.ok) throw new Error('Не удалось получить погоду');
     return r.json();
   }
 
-  async function run(placeOrPromise) {
-    $('status').textContent = 'Загружаю прогноз…';
+  let runId = 0;
+  async function run(placeOrPromise, loadingText = 'Загружаю прогноз…') {
+    const my = ++runId; // если пользователь успел запросить другое место, старый ответ игнорируем
+    $('status').textContent = loadingText;
+    $('status').classList.remove('err');
     try {
       const pl = await placeOrPromise;
+      if (my !== runId) return;
+      $('status').textContent = 'Загружаю прогноз…';
       const w = await loadWeather(pl.lat, pl.lon);
+      if (my !== runId) return;
       state.all = buildHours(w);
       state.offset = w.utc_offset_seconds * 1000;
-      const todayKey = new Date(Date.now() + state.offset).toISOString().slice(0, 10);
-      state.hours = state.all.filter(x => x.local.toISOString().slice(0, 10) >= todayKey);
+      state.todayKey = new Date(Date.now() + state.offset).toISOString().slice(0, 10);
+      // только полные сутки (24 часа), чтобы не показывать обрезанные дни
+      const count = new Map();
+      for (const h of state.all) count.set(dayKey(h), (count.get(dayKey(h)) || 0) + 1);
+      state.days = [...count.entries()].filter(([, n]) => n >= 23).map(([k]) => k);
       state.autoSeason = detectSeason(state.all);
-      state.place = pl; state.sel = 0;
+      state.place = pl;
+      const first = state.days[0], last = state.days[state.days.length - 1];
+      $('date').min = first; $('date').max = last;
+      if (!state.selKey || state.selKey < first || state.selKey > last) state.selKey = state.todayKey;
+      $('date').value = state.selKey;
+      $('cfPlace').textContent = pl.name;
       store.set({place: pl});
       $('status').textContent = '';
       if (map) {
         if (pointMarker) pointMarker.remove();
         pointMarker = L.marker([pl.lat, pl.lon]).addTo(map);
+        map.invalidateSize();
         map.setView([pl.lat, pl.lon], Math.max(map.getZoom(), 9));
       }
       render();
       loadCatches();
     } catch (e) {
+      if (my !== runId) return;
       $('status').textContent = '⚠️ ' + e.message;
+      $('status').classList.add('err');
     }
   }
 
   // ---------- прогноз ----------
   function render() {
-    if (!state.hours.length) return;
+    if (!state.days.length) return;
     const fishKey = $('fish').value, fish = FISH[fishKey], ss = season();
-    const scored = state.hours.map(x => ({...x, ...scoreHour(x, fish, ss)}));
-    const byDay = new Map();
-    for (const h of scored) {
-      const key = h.local.toISOString().slice(0, 10);
-      if (!byDay.has(key)) byDay.set(key, []);
-      byDay.get(key).push(h);
-    }
-    const days = [...byDay.entries()].slice(0, 7).map(([key, hs]) => {
+    // показываем полосу из 7 дней вокруг выбранной даты
+    const idx = Math.max(0, state.days.indexOf(state.selKey));
+    const start = Math.max(0, Math.min(idx - 3, state.days.length - 7));
+    const keys = state.days.slice(start, start + 7);
+    const days = keys.map(key => {
+      const hs = state.all.filter(h => dayKey(h) === key).map(x => ({...x, ...scoreHour(x, fish, ss)}));
       const top = [...hs].sort((a, b) => b.score - a.score).slice(0, 5);
       const avg = hs.reduce((s, h) => s + h.score, 0) / hs.length;
       return {key, hs, score: Math.round(0.6 * top.reduce((s, h) => s + h.score, 0) / top.length + 0.4 * avg)};
     });
-    state.sel = Math.min(state.sel, days.length - 1);
 
     const auto = $('season').value === 'auto';
     $('place').innerHTML = `${esc(state.place.name)} — ${fish.name}
       <span class="badge ${ss}">${ss === 'ice' ? '❄️ со льда' : '🌊 открытая вода'}${auto ? ' · авто' : ''}</span>`;
-    $('days').innerHTML = days.map((d, i) => {
-      const dt = new Date(d.key + 'T00:00:00Z');
-      return `<button class="day ${i === state.sel ? 'active' : ''}" data-i="${i}">
-        <div class="d">${i === 0 ? 'Сегодня' : WD[dt.getUTCDay()] + ', ' + dt.getUTCDate() + '.' + pad(dt.getUTCMonth() + 1)}</div>
+    $('days').innerHTML = days.map(d => {
+      const dt = new Date(d.key + 'T00:00:00Z'), diff = daysBetween(state.todayKey, d.key);
+      const name = diff === 0 ? 'Сегодня' : diff === 1 ? 'Завтра' : diff === -1 ? 'Вчера'
+        : WD[dt.getUTCDay()] + ', ' + dt.getUTCDate() + '.' + pad(dt.getUTCMonth() + 1);
+      const tag = diff < 0 ? 'факт. погода' : diff >= RELIABLE_DAYS ? 'дальний' : '';
+      return `<button class="day ${d.key === state.selKey ? 'active' : ''} ${diff < 0 ? 'past' : ''}" data-k="${d.key}">
+        <div class="d">${name}</div>
         <div class="score" style="color:${color(d.score)}">${d.score}</div>
-        <div class="lbl">${label(d.score)}</div></button>`;
+        <div class="lbl">${label(d.score)}</div>${tag ? `<div class="tag">${tag}</div>` : ''}</button>`;
     }).join('');
-    document.querySelectorAll('.day').forEach(el => el.onclick = () => { state.sel = +el.dataset.i; render(); });
-    renderDetail(days[state.sel], fish, ss);
+    document.querySelectorAll('.day').forEach(el => el.onclick = () => selectDate(el.dataset.k));
+    renderDetail(days.find(d => d.key === state.selKey) || days[0], fish, ss);
+  }
+
+  function selectDate(key) {
+    if (!state.days.length) return;
+    const first = state.days[0], last = state.days[state.days.length - 1];
+    state.selKey = key < first ? first : key > last ? last : key;
+    $('date').value = state.selKey;
+    render();
   }
 
   function bestWindow(hs) {
@@ -159,7 +226,15 @@
       ? `воздух ${avg('air').toFixed(0)}°C, ${avg('dt24') >= 0 ? '+' : ''}${avg('dt24').toFixed(1)}° за сутки`
       : `${avg('water').toFixed(1)}°C · воздух ${avg('air').toFixed(0)}°C`;
 
-    $('detail').innerHTML = `
+    const diff = daysBetween(state.todayKey, d.key);
+    const dateText = new Date(d.key + 'T00:00:00Z').toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', weekday: 'long', timeZone: 'UTC'});
+    const note = diff < 0
+      ? `<div class="note">📅 ${dateText}: прошедший день — показана фактическая погода. Удобно сравнить с вашим уловом.</div>`
+      : diff >= RELIABLE_DAYS
+        ? `<div class="note warn">⚠️ ${dateText}: прогноз на ${diff} дн. вперёд — погода может сильно измениться, проверьте ближе к дате.</div>`
+        : `<div class="note">📅 ${dateText}</div>`;
+
+    $('detail').innerHTML = note + `
       <div class="panel"><h2>Лучшее время: ${bestWindow(hs)}</h2>
         <div class="hours">${hs.map(h => `<div class="h" title="${pad(h.local.getUTCHours())}:00 — ${h.score}">
           <b style="height:${Math.max(h.score, 2)}%;background:${color(h.score)}"></b><span>${h.local.getUTCHours() % 3 === 0 ? h.local.getUTCHours() : ''}</span></div>`).join('')}</div>
@@ -213,10 +288,11 @@
       ${window.Catches.remote ? '' : '<div class="foot">База не подключена — отчёты видны только в этом браузере.</div>'}`;
     $('reports').innerHTML = all.length ? all.slice(0, 10).map(c => {
       const d = new Date(c.caught_at);
-      const extra = [c.fish_count != null ? `${c.fish_count} шт.` : '', c.weight_kg != null ? `${(+c.weight_kg).toFixed(2)} кг` : ''].filter(Boolean).join(', ');
+      const extra = [c.fish_count != null ? `${c.fish_count} шт.` : '', c.weight_kg != null ? `${(+c.weight_kg).toFixed(2)} кг` : '',
+        METHOD[c.method] || '', c.bait ? `на ${c.bait}` : '', c.depth_m != null ? `глубина ${(+c.depth_m)} м` : ''].filter(Boolean).join(', ');
       return `<li><b>${esc(FISH[c.fish]?.name || c.fish)}</b> — ${c.rating}/5, ${RATING[c.rating] || ''}${extra ? ' · ' + esc(extra) : ''}
         ${c.season === 'ice' ? ' ❄️' : ''}
-        <div class="meta">${d.toLocaleDateString('ru-RU')} ${pad(d.getHours())}:${pad(d.getMinutes())}${c.place ? ' · ' + esc(c.place) : ''}${c.forecast_score != null ? ' · прогноз был ' + c.forecast_score : ''}</div>
+        <div class="meta">${d.toLocaleDateString('ru-RU')} ${pad(d.getHours())}:${pad(d.getMinutes())}${c.nickname ? ' · ' + esc(c.nickname) : ''}${c.place ? ' · ' + esc(c.place) : ''}${c.forecast_score != null ? ' · прогноз был ' + c.forecast_score : ''}</div>
         ${c.comment ? `<div>${esc(c.comment)}</div>` : ''}</li>`;
     }).join('') : '<li class="foot">Пока нет отчётов рядом. Будьте первым!</li>';
 
@@ -236,20 +312,25 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  $('reportForm').addEventListener('toggle', () => {
-    if ($('reportForm').open) {
-      $('cfFish').value = $('fish').value;
-      if (!$('cfTime').value) $('cfTime').value = localInputValue(new Date());
-    }
-  });
+  function resetForm(fishKey) {
+    $('catchForm').reset();
+    $('cfFish').value = fishKey || $('fish').value;
+    const now = new Date();
+    $('cfTime').value = localInputValue(now);
+    $('cfTime').max = localInputValue(new Date(now.getTime() + 3600000));
+    $('cfTime').min = localInputValue(new Date(now.getTime() - 29 * 86400000));
+    try { const n = localStorage.getItem('ff_nick'); if (n) $('catchForm').nickname.value = n; } catch (e) {}
+  }
+  resetForm();
 
   $('catchForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!state.place) { $('cfMsg').textContent = 'Сначала выберите место.'; return; }
     const fd = new FormData(e.target);
     const when = new Date(fd.get('caught_at'));
-    if (isNaN(when) || when > new Date(Date.now() + 3600000)) { $('cfMsg').textContent = 'Проверьте дату и время.'; return; }
-    if (when < new Date(Date.now() - 7 * 86400000)) { $('cfMsg').textContent = 'Можно отметить улов только за последние 7 дней.'; return; }
+    if (isNaN(when) || when > new Date(Date.now() + 3600000)) { $('cfMsg').textContent = 'Проверьте дату и время — улов не может быть в будущем.'; return; }
+    if (when < new Date(Date.now() - 29 * 86400000)) { $('cfMsg').textContent = 'Можно отметить улов только за последние 30 дней.'; return; }
+    if (!fd.get('rating')) { $('cfMsg').textContent = 'Отметьте, как клевало.'; return; }
 
     // запоминаем, что показывал прогноз в этот час: потом по этим данным можно подобрать веса модели
     const fishKey = fd.get('fish'), ss = season();
@@ -262,18 +343,21 @@
       Object.assign(factors, {p: +hour.p.toFixed(1), dp3: +hour.dp3.toFixed(1), dp24: +hour.dp24.toFixed(1),
         air: +hour.air.toFixed(1), water: +hour.water.toFixed(1), wind: +hour.wind.toFixed(1), clouds: hour.clouds, precip: hour.precip});
     }
-    const num = k => fd.get(k) === '' ? null : Number(fd.get(k));
+    const num = k => fd.get(k) == null || fd.get(k) === '' ? null : Number(fd.get(k));
+    const txt = (k, n) => String(fd.get(k) || '').trim().slice(0, n) || null;
     const btn = e.target.querySelector('button');
     btn.disabled = true; $('cfMsg').textContent = 'Отправляю…';
     try {
       await window.Catches.add({
         caught_at: when.toISOString(), lat: +state.place.lat.toFixed(4), lon: +state.place.lon.toFixed(4),
         place: state.place.name.slice(0, 120), fish: fishKey, season: ss, rating: Number(fd.get('rating')),
-        fish_count: num('fish_count'), weight_kg: num('weight_kg'),
-        comment: (fd.get('comment') || '').trim().slice(0, 500) || null, forecast_score, factors,
+        fish_count: num('fish_count'), weight_kg: num('weight_kg'), depth_m: num('depth_m'),
+        method: fd.get('method') || null, bait: txt('bait', 80), nickname: txt('nickname', 40),
+        comment: txt('comment', 500), forecast_score, factors,
       });
+      try { if (fd.get('nickname')) localStorage.setItem('ff_nick', String(fd.get('nickname')).trim()); } catch (e) {}
       $('cfMsg').textContent = '✅ Спасибо! Отчёт сохранён.';
-      e.target.reset(); $('cfTime').value = localInputValue(new Date()); $('cfFish').value = fishKey;
+      resetForm(fishKey);
       loadCatches();
     } catch (err) {
       $('cfMsg').textContent = '⚠️ ' + err.message;
@@ -283,14 +367,13 @@
   // ---------- события ----------
   $('go').onclick = () => { const q = $('city').value.trim(); if (q) { store.set({city: q}); run(geocode(q)); } };
   $('city').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
-  $('geo').onclick = () => run(new Promise((res, rej) => {
-    if (!navigator.geolocation) return rej(new Error('Браузер не поддерживает геолокацию'));
-    navigator.geolocation.getCurrentPosition(
-      p => res({lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4), name: 'Моё местоположение'}),
-      () => rej(new Error('Нет доступа к геолокации')));
-  }));
+  $('geo').onclick = () => run(locate(), 'Определяю местоположение…');
   $('fish').onchange = () => { store.set({fish: $('fish').value}); render(); renderCatches(); };
   $('season').onchange = () => { store.set({season: $('season').value}); render(); };
+  $('date').onchange = () => { if ($('date').value) selectDate($('date').value); };
+  $('prevDay').onclick = () => state.selKey && selectDate(addDays(state.selKey, -1));
+  $('nextDay').onclick = () => state.selKey && selectDate(addDays(state.selKey, 1));
+  $('today').onclick = () => state.todayKey && selectDate(state.todayKey);
 
   // ---------- старт ----------
   const saved = store.get();

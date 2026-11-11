@@ -7,12 +7,12 @@
 <meta name="description" content="Прогноз клёва рыбы на 7 дней по погоде, давлению и фазе луны. Летний и зимний режим, карта и отчёты рыбаков.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎣</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
 <div class="wrap">
   <h1>🎣 Прогноз клёва</h1>
-  <p class="sub">Индекс активности рыбы на 7 дней по погоде, давлению и фазе луны</p>
+  <p class="sub">Индекс активности рыбы на любую дату — по погоде, давлению и фазе луны</p>
 
   <div class="controls">
     <input id="city" placeholder="Город или водоём, например: Рыбинск" autocomplete="off">
@@ -26,38 +26,68 @@
       <option value="open">Открытая вода</option>
       <option value="ice">Со льда</option>
     </select>
+    <div class="datebox">
+      <button id="prevDay" type="button" aria-label="Предыдущий день">◀</button>
+      <input type="date" id="date" aria-label="Дата прогноза">
+      <button id="nextDay" type="button" aria-label="Следующий день">▶</button>
+      <button id="today" type="button">Сегодня</button>
+    </div>
+    <a class="btn-report" href="#reportPanel">📝 Отчёт об улове</a>
   </div>
+
+  <div class="status" id="status" role="status" aria-live="polite"></div>
 
   <div id="map"></div>
   <p class="map-hint">Нажмите на карту, чтобы получить прогноз для любой точки. Кружки — отчёты рыбаков за 30 дней.</p>
 
-  <div class="status" id="status"></div>
   <div class="place" id="place"></div>
   <div class="days" id="days"></div>
   <div id="detail"></div>
+
+  <div class="panel" id="reportPanel">
+    <h2>📝 Отчёт об улове</h2>
+    <p class="foot" style="margin-top:0">Расскажите, как клевало: по отчётам рыбаков мы проверяем и улучшаем прогноз.</p>
+    <form class="form" id="catchForm">
+      <div class="wide where">📍 Место: <b id="cfPlace">выберите на карте или найдите по названию</b>
+        <span class="foot">— чтобы указать другое место, нажмите на карту</span></div>
+      <label>Рыба *<select name="fish" id="cfFish"></select></label>
+      <label>Дата и время *<input type="datetime-local" name="caught_at" id="cfTime" required></label>
+      <fieldset class="wide rating">
+        <legend>Как клевало *</legend>
+        <label><input type="radio" name="rating" value="1" required><span>😞<br>не клевало</span></label>
+        <label><input type="radio" name="rating" value="2"><span>😕<br>слабо</span></label>
+        <label><input type="radio" name="rating" value="3"><span>😐<br>средне</span></label>
+        <label><input type="radio" name="rating" value="4"><span>🙂<br>хорошо</span></label>
+        <label><input type="radio" name="rating" value="5"><span>🤩<br>отлично</span></label>
+      </fieldset>
+      <label>Снасть
+        <select name="method">
+          <option value="">— не указано —</option>
+          <option value="spinning">Спиннинг</option>
+          <option value="jig">Джиг</option>
+          <option value="float">Поплавочная удочка</option>
+          <option value="feeder">Фидер</option>
+          <option value="bottom">Донка</option>
+          <option value="fly">Мормышка / зимняя удочка</option>
+          <option value="tipup">Жерлицы</option>
+          <option value="trolling">Троллинг</option>
+          <option value="other">Другое</option>
+        </select></label>
+      <label>Приманка / наживка<input name="bait" maxlength="80" placeholder="мотыль, воблер, твистер…"></label>
+      <label>Глубина, м<input type="number" name="depth_m" min="0" max="300" step="0.1" inputmode="decimal"></label>
+      <label>Поймано, шт.<input type="number" name="fish_count" min="0" max="500" inputmode="numeric"></label>
+      <label>Общий вес, кг<input type="number" name="weight_kg" min="0" max="200" step="0.01" inputmode="decimal"></label>
+      <label>Ваше имя<input name="nickname" maxlength="40" placeholder="необязательно"></label>
+      <label class="wide">Комментарий<textarea name="comment" maxlength="500" placeholder="Где стояла рыба, что сработало, погода на месте…"></textarea></label>
+      <div class="wide"><button class="primary" type="submit">Отправить отчёт</button></div>
+    </form>
+    <div class="msg" id="cfMsg"></div>
+  </div>
 
   <div class="panel" id="reportsPanel">
     <h2>Отчёты рыбаков рядом</h2>
     <div class="stats" id="stats"></div>
     <ul class="reports" id="reports"></ul>
-    <details id="reportForm">
-      <summary><b>Сообщить об улове</b></summary>
-      <form class="form" id="catchForm">
-        <label>Рыба<select name="fish" id="cfFish"></select></label>
-        <label>Когда<input type="datetime-local" name="caught_at" id="cfTime" required></label>
-        <label>Как клевало
-          <select name="rating" required>
-            <option value="5">5 — отлично</option><option value="4">4 — хорошо</option>
-            <option value="3" selected>3 — средне</option><option value="2">2 — слабо</option><option value="1">1 — не клевало</option>
-          </select></label>
-        <label>Поймано, шт.<input type="number" name="fish_count" min="0" max="500" inputmode="numeric"></label>
-        <label>Вес, кг<input type="number" name="weight_kg" min="0" max="200" step="0.01" inputmode="decimal"></label>
-        <label class="wide">Комментарий (снасть, приманка, глубина)<textarea name="comment" maxlength="500"></textarea></label>
-        <div class="wide"><button class="primary" type="submit">Отправить</button>
-          <span class="foot"> Место — текущая точка прогноза</span></div>
-      </form>
-      <div class="msg" id="cfMsg"></div>
-    </details>
   </div>
 
   <p class="foot">Погода: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Карта: © OpenStreetMap.
@@ -65,9 +95,9 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="js/config.js"></script>
-<script src="js/forecast.js"></script>
-<script src="js/catches.js"></script>
-<script src="js/app.js"></script>
+<script src="js/config.js?v=2"></script>
+<script src="js/forecast.js?v=2"></script>
+<script src="js/catches.js?v=2"></script>
+<script src="js/app.js?v=2"></script>
 </body>
 </html>

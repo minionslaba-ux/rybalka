@@ -48,3 +48,12 @@ end $$;
 revoke execute on function public.fishing_catches_rate_limit() from public, anon, authenticated;
 create trigger fishing_catches_rate_limit before insert on public.fishing_catches
   for each row execute function public.fishing_catches_rate_limit();
+
+-- v2: дополнительные поля формы отчёта
+alter table public.fishing_catches
+  add column method text check (method in ('spinning','float','feeder','bottom','fly','jig','tipup','trolling','other')),
+  add column bait text check (char_length(bait) <= 80),
+  add column depth_m numeric(5,1) check (depth_m between 0 and 300),
+  add column nickname text check (char_length(nickname) <= 40);
+grant select (method, bait, depth_m, nickname) on public.fishing_catches to anon, authenticated;
+grant insert (method, bait, depth_m, nickname) on public.fishing_catches to anon, authenticated;

@@ -57,7 +57,7 @@
         .sort((a, b) => b.caught_at.localeCompare(a.caught_at));
     }
     const q = new URLSearchParams();
-    q.set('select', 'id,caught_at,lat,lon,place,fish,season,rating,fish_count,weight_kg,comment,forecast_score');
+    q.set('select', 'id,caught_at,lat,lon,place,fish,season,rating,fish_count,weight_kg,comment,forecast_score,method,bait,depth_m,nickname');
     q.append('lat', `gte.${lat - deg}`); q.append('lat', `lte.${lat + deg}`);
     q.append('lon', `gte.${lon - deg}`); q.append('lon', `lte.${lon + deg}`);
     q.set('caught_at', `gte.${since}`);
