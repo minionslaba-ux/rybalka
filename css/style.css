@@ -1,0 +1,56 @@
+:root{
+  --bg:#f4f7f6; --card:#ffffff; --text:#14231f; --muted:#5b6d68; --line:#dfe7e4;
+  --accent:#0f766e; --accent-text:#ffffff; --good:#16a34a; --mid:#ca8a04; --bad:#dc2626; --ice:#0284c7;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1513; --card:#15211e; --text:#e6efec; --muted:#93a7a1; --line:#24332f;
+         --accent:#2dd4bf; --accent-text:#062a26; --ice:#38bdf8; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{margin:0 0 4px;font-size:28px}
+.sub{color:var(--muted);margin:0 0 20px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+input,select,textarea,button{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)}
+.controls input{flex:1 1 220px;min-width:0}
+button{cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-text);border:0}
+.status{color:var(--muted);min-height:1.5em;margin-bottom:8px}
+#map{height:320px;border-radius:14px;border:1px solid var(--line);margin-bottom:16px;z-index:0}
+.map-hint{color:var(--muted);font-size:13px;margin:-10px 0 16px}
+.place{font-weight:600;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.badge{font-size:12px;font-weight:600;padding:3px 8px;border-radius:999px;border:1px solid currentColor}
+.badge.ice{color:var(--ice)} .badge.open{color:var(--good)}
+.days{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px;margin-bottom:20px}
+.day{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:12px;cursor:pointer;text-align:center;color:var(--text)}
+.day.active{border-color:var(--accent)}
+.day .d{color:var(--muted);font-size:14px}
+.day .score{font-size:30px;font-weight:700}
+.day .lbl{font-size:13px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.panel h2{margin:0 0 10px;font-size:18px}
+.factors{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.f{border:1px solid var(--line);border-radius:10px;padding:10px}
+.f .n{color:var(--muted);font-size:13px}
+.f .v{font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%}
+.hours{display:flex;gap:3px;align-items:flex-end;height:140px;overflow-x:auto;padding-top:8px}
+.h{flex:1 0 20px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.h b{width:100%;border-radius:4px 4px 0 0}
+.h span{font-size:11px;color:var(--muted);margin-top:4px;height:14px}
+.tips{margin:0;padding-left:20px}
+.stats{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:12px}
+.stat .n{color:var(--muted);font-size:13px}
+.stat .v{font-size:22px;font-weight:700}
+.reports{list-style:none;margin:0;padding:0}
+.reports li{border-top:1px solid var(--line);padding:8px 0;font-size:14px}
+.reports .meta{color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:12px}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.form .wide{grid-column:1/-1}
+.form textarea{min-height:60px;resize:vertical}
+.msg{font-size:14px;margin-top:8px}
+.foot{color:var(--muted);font-size:13px}
+@media (max-width:520px){ h1{font-size:24px} .day .score{font-size:26px} }

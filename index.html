@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Прогноз клёва</title>
+<meta name="description" content="Прогноз клёва рыбы на 7 дней по погоде, давлению и фазе луны. Летний и зимний режим, карта и отчёты рыбаков.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎣</text></svg>">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>🎣 Прогноз клёва</h1>
+  <p class="sub">Индекс активности рыбы на 7 дней по погоде, давлению и фазе луны</p>
+
+  <div class="controls">
+    <input id="city" placeholder="Город или водоём, например: Рыбинск" autocomplete="off">
+    <button id="go" class="primary">Найти</button>
+    <button id="geo" title="Моё местоположение">📍 Рядом со мной</button>
+  </div>
+  <div class="controls">
+    <select id="fish" aria-label="Рыба"></select>
+    <select id="season" aria-label="Сезон">
+      <option value="auto">Сезон: авто</option>
+      <option value="open">Открытая вода</option>
+      <option value="ice">Со льда</option>
+    </select>
+  </div>
+
+  <div id="map"></div>
+  <p class="map-hint">Нажмите на карту, чтобы получить прогноз для любой точки. Кружки — отчёты рыбаков за 30 дней.</p>
+
+  <div class="status" id="status"></div>
+  <div class="place" id="place"></div>
+  <div class="days" id="days"></div>
+  <div id="detail"></div>
+
+  <div class="panel" id="reportsPanel">
+    <h2>Отчёты рыбаков рядом</h2>
+    <div class="stats" id="stats"></div>
+    <ul class="reports" id="reports"></ul>
+    <details id="reportForm">
+      <summary><b>Сообщить об улове</b></summary>
+      <form class="form" id="catchForm">
+        <label>Рыба<select name="fish" id="cfFish"></select></label>
+        <label>Когда<input type="datetime-local" name="caught_at" id="cfTime" required></label>
+        <label>Как клевало
+          <select name="rating" required>
+            <option value="5">5 — отлично</option><option value="4">4 — хорошо</option>
+            <option value="3" selected>3 — средне</option><option value="2">2 — слабо</option><option value="1">1 — не клевало</option>
+          </select></label>
+        <label>Поймано, шт.<input type="number" name="fish_count" min="0" max="500" inputmode="numeric"></label>
+        <label>Вес, кг<input type="number" name="weight_kg" min="0" max="200" step="0.01" inputmode="decimal"></label>
+        <label class="wide">Комментарий (снасть, приманка, глубина)<textarea name="comment" maxlength="500"></textarea></label>
+        <div class="wide"><button class="primary" type="submit">Отправить</button>
+          <span class="foot"> Место — текущая точка прогноза</span></div>
+      </form>
+      <div class="msg" id="cfMsg"></div>
+    </details>
+  </div>
+
+  <p class="foot">Погода: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Карта: © OpenStreetMap.
+    Прогноз — оценка по рыболовным приметам, а не гарантия улова. Выходя на лёд, проверяйте его толщину: не меньше 7–10 см.</p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/config.js"></script>
+<script src="js/forecast.js"></script>
+<script src="js/catches.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
